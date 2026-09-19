@@ -8,6 +8,7 @@ import altair as alt
 from PIL import Image
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import google.generativeai as genai
 
 # Thiết lập múi giờ chuẩn Việt Nam (GMT+7) cho hệ thống máy chủ đám mây
@@ -286,20 +287,103 @@ with tab1:
             st.rerun()
 
 with tab2:
-    st.subheader("🎙️ Nhập Liệu Bằng Giọng Nói (Voice-to-Text AI)")
-    st.info(
-        "💡 Bấm vào ô bên dưới, đọc hoặc nhập nhanh câu nói mô tả khoản chi. Trợ"
-        " lý AI sẽ nghe/đọc hiểu và bóc tách tự động."
+    st.subheader("🎙️ Nhập Liệu Bằng Giọng Nói (Micro Trực Tiếp)")
+    st.markdown(
+        "Bấm nút **'🎙️ Bắt đầu nói'** bên dưới, cho phép trình duyệt truy cập"
+        " Micro (nếu có thông báo hỏi), sau đó nói nội dung chi tiêu (VD: *'Vừa"
+        " mua mic 2 củ'*). Hệ thống sẽ tự động ghi nhận vào ô bên dưới."
     )
 
+    # Tích hợp Widget HTML5 Speech Recognition tương thích Mobile & Desktop
+    voice_component = """
+    <div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; text-align: center; border: 1px dashed #444;">
+        <button id="record-btn" onclick="toggleSpeech()" style="background-color: #ff4b4b; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold;">🎙️ Bắt đầu nói</button>
+        <p id="status" style="color: #aaa; margin-top: 10px; font-size: 14px;">Trạng thái: Đang chờ bấm nút...</p>
+        <textarea id="result-text" placeholder="Văn bản nói sẽ hiện ở đây..." style="width: 100%; height: 80px; margin-top: 10px; padding: 10px; border-radius: 6px; background: #2d2d2d; color: white; border: 1px solid #555;"></textarea>
+    </div>
+
+    <script>
+        const btn = document.getElementById('record-btn');
+        const status = document.getElementById('status');
+        const textBox = document.getElementById('result-text');
+        
+        let recognition = null;
+        let isRecording = false;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'vi-VN';
+            recognition.continuous = false;
+            recognition.interimResults = true;
+
+            recognition.onstart = function() {
+                isRecording = true;
+                btn.innerText = "🛑 Đang nghe... (Bấm để dừng)";
+                btn.style.backgroundColor = "#ffa500";
+                status.innerText = "Trạng thái: Đang lắng nghe giọng nói tiếng Việt...";
+            };
+
+            recognition.onresult = function(event) {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    transcript += event.results[i][0].transcript;
+                }
+                textBox.value = transcript;
+                
+                // Đồng bộ giá trị ngược lại vào Streamlit state qua DOM event nếu cần hoặc để copy
+                window.parent.postMessage({type: 'streamlit:setComponentValue', value: transcript}, '*');
+            };
+
+            recognition.onerror = function(event) {
+                status.innerText = "Lỗi micro: " + event.error;
+                stopRecording();
+            };
+
+            recognition.onend = function() {
+                stopRecording();
+            };
+        } else {
+            status.innerText = "Trình duyệt của Chủ tịch không hỗ trợ Web Speech API. Hãy dùng Chrome hoặc Safari mới nhất!";
+            btn.disabled = true;
+        }
+
+        function toggleSpeech() {
+            if (!recognition) return;
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                try {
+                    recognition.start();
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            btn.innerText = "🎙️ Bắt đầu nói";
+            btn.style.backgroundColor = "#ff4b4b";
+            if (status.innerText.includes("Đang lắng nghe")) {
+                status.innerText = "Trạng thái: Đã thu âm xong!";
+            }
+        }
+    </script>
+    """
+
+    # Hiển thị component giao diện micro
+    components.html(voice_component, height=220)
+
+    st.markdown("---")
     voice_text_input = st.text_area(
-        "Nội dung giọng nói / văn bản đọc nhanh:",
+        "Hoặc dán/chỉnh sửa nội dung giọng nói ở đây:",
         placeholder="VD: Vừa chi 2 củ mua ngàm ống kính cho máy ảnh sony...",
     )
 
-    if st.button("🚀 Xử lý giọng nói bằng AI", type="primary"):
+    if st.button("🚀 Xử lý giao dịch giọng nói bằng AI", type="primary"):
         if voice_text_input:
-            with st.spinner("🎧 Trợ lý AI đang phân tích giọng nói..."):
+            with st.spinner("🎧 Trợ lý AI đang phân tích..."):
                 v_amount, v_content, v_cat, v_fund = ai_parse_expense(voice_text_input)
 
             cursor = conn.cursor()
@@ -316,14 +400,14 @@ with tab2:
             )
             conn.commit()
             st.success(
-                f"Đã ghi nhận giọng nói thành công vào ngày {selected_sidebar_date}!"
+                f"Đã ghi nhận thành công vào ngày {selected_sidebar_date}!"
             )
             st.info(
                 f"💰 Số tiền: **{v_amount:,.0f} VNĐ** | 📝 Nội dung: **{v_content}** |"
                 f" 📂 Danh mục: **{v_cat}** | 🏷️ Quỹ: **{v_fund}**"
             )
         else:
-            st.warning("Vui lòng nhập nội dung giọng nói trước khi xử lý!")
+            st.warning("Vui lòng nói vào micro hoặc nhập nội dung trước khi xử lý!")
 
 with tab3:
     st.subheader("Quét Hóa Đơn / Bill qua Camera (AI Vision)")
