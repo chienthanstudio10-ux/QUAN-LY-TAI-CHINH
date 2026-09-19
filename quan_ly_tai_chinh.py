@@ -1,12 +1,19 @@
 from datetime import datetime, timedelta
 import json
+import os
 import re
 import sqlite3
+import time
 import altair as alt
 from PIL import Image
 import pandas as pd
 import streamlit as st
 import google.generativeai as genai
+
+# Thiết lập múi giờ chuẩn Việt Nam (GMT+7) cho hệ thống máy chủ đám mây
+os.environ['TZ'] = 'Asia/Ho_Chi_Minh'
+if hasattr(time, 'tzset'):
+    time.tzset()
 
 # Page configuration
 st.set_page_config(
